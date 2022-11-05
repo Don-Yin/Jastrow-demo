@@ -1,0 +1,4 @@
+streamlit~=1.14.0
+watchdog~=2.1.9
+Pillow~=9.3.0
+seaborn-image~=0.5.0

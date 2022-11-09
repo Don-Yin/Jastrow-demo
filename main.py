@@ -39,7 +39,7 @@ class Demo:
             st.title("Jastrow Demo")
 
             selected_thickness = st.select_slider(label="Thickness", options=self.thickness, value=self.thickness[0])
-            selected_radian = st.select_slider(label="Curvature", options=self.radian, value=self.radian[0])
+            selected_radian = st.select_slider(label="Length", options=self.radian, value=self.radian[0])
 
             self.selected_distance = st.slider(label="Distance", min_value=1, max_value=1200, value=1, step=1)
             self.selected_config = {"thickness": selected_thickness, "angle": selected_radian, "radius_outer": 3800.0}

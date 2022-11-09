@@ -3,11 +3,13 @@ A script that generates a jastrow shape and saves it to a file.
 """
 
 import itertools
+import json
+import multiprocessing
 import operator
 import os
-from math import cos, sin, pi
+import time
+from math import cos, pi, sin
 from pathlib import Path
-import json
 
 import numpy as np
 from PIL import Image
@@ -19,30 +21,31 @@ configs_constant = {
     "canvas_size_jastrow": 4000,
     "background_size": 8000,
     "overlap_threshold": 0.001,
-    "init_angle": 20, # from 0 - 44
+    "init_angle": 20,  # from 0 - 44
     "rotate_step": 1,
 }
 
 configs_variable = {
     "radius_outer": 1,  # from 0 - 1 / this basically defines resolution
     "thickness": 0.5,  # from 0 - 1
-    "angle": 45, # from 0 - 45; note this is different from the init_angle which is for rotations
+    "angle": 45,  # from 0 - 45; note this is different from the init_angle which is for rotations
 }
+
 
 def update_configs(configs_variable: dict) -> dict:
     """
-    Initial update of the configs_variable. 
+    Initial update of the configs_variable.
     Called once at the beginning of the program.
     """
     configs_variable["radius_outer"] *= configs_constant["canvas_size_jastrow"] / 2
     configs_variable["radius_outer"] += configs_constant["canvas_size_jastrow"] / 2
-
 
     configs_variable["radius_inner"] = configs_variable["radius_outer"] - (
         (configs_variable["radius_outer"] - (configs_constant["canvas_size_jastrow"] / 2)) * configs_variable["thickness"]
     )
 
     return configs_variable
+
 
 def get_vector(angle: float, length: float):
     """Compute the vector of the given angle and length
@@ -56,9 +59,10 @@ def get_vector(angle: float, length: float):
     x, y = length * cos(angle), length * sin(angle)
     return (x, y)
 
+
 def generate_shape(configs_variable: dict = configs_variable) -> Image:
     """
-    Generate a uncropped/un-rotated jastrow shape using the 
+    Generate a uncropped/un-rotated jastrow shape using the
     configs_variable.
     """
     # make empty canvas
@@ -91,7 +95,7 @@ def generate_shape(configs_variable: dict = configs_variable) -> Image:
 
 def compute_coordinates(canvas: Image) -> np.ndarray:
     """
-    Compute the coordinates of the upper left and lower left 
+    Compute the coordinates of the upper left and lower left
     corners of the canvas' white pixel.
     """
     # translate into arrays
@@ -117,12 +121,12 @@ def compute_coordinates(canvas: Image) -> np.ndarray:
 
 def rotate_and_crop(canvas: Image, degree: int = 44) -> Image:
     """Rotate and crop the canvas to the smallest possible size.
-        Params:
-            canvas: the canvas to rotate and crop
-            degree: the degree to rotate the canvas
-        Returns:
-            canvas_cropped: the cropped canvas
-            canvas_rotated: the rotated and cropped canvas
+    Params:
+        canvas: the canvas to rotate and crop
+        degree: the degree to rotate the canvas
+    Returns:
+        canvas_cropped: the cropped canvas
+        canvas_rotated: the rotated and cropped canvas
     """
     coordinates_upper_left, coordinates_lower_left = compute_coordinates(canvas)
 
@@ -162,7 +166,7 @@ def make_jastrow(shape_original: Image, shape_rotated: Image, configs_variable: 
         """
         # compute the motion vector for moving the second shape away from the first shape
         motion_vector = get_vector(
-            angle=configs_variable['angle'] / 2,
+            angle=configs_variable["angle"] / 2,
             length=distance,
         )
         paste_coordinates = (int(paste_coordinates[0] + motion_vector[0]), int(paste_coordinates[1] + motion_vector[1]))
@@ -171,6 +175,7 @@ def make_jastrow(shape_original: Image, shape_rotated: Image, configs_variable: 
     background.paste(shape_rotated, paste_coordinates, shape_rotated)
 
     return background
+
 
 def get_area_size(canvas: Image, color: str) -> int:
     canvas_array = np.array(canvas)
@@ -190,86 +195,74 @@ def get_area_size(canvas: Image, color: str) -> int:
         case _:
             raise ValueError(f"Unknown color {color}")
 
-class RotateRecorder():
+
+class RotateRecorder:
     def __init__(self):
-        self.init_angle = configs_constant['init_angle']
+        self.init_angle = configs_constant["init_angle"]
         self.overlapped = 0
-    
+
     def update_overlap(self, overlap: int):
         self.overlapped = overlap
-    
+
     def update_angle(self):
-        self.init_angle -= configs_constant['rotate_step']
+        self.init_angle -= configs_constant["rotate_step"]
+
 
 def chunk_list(target_list: list, n: int):
-    return [target_list[i:i + n] for i in range(0, len(target_list), n)] 
+    return [target_list[i : i + n] for i in range(0, len(target_list), n)]
+
+
+def get_optimal_angle(input_config: dict):
+    # init the original canvas + rotate recorder
+    canvas_uncropped = generate_shape(configs_variable=input_config)
+    rotate_recorder = RotateRecorder()
+
+    # iteratively reduce the angle of the second shape until it touches (overlap) with the first shape
+    # or stop when the angle is 0 (totally horizontal)
+    while rotate_recorder.overlapped < configs_constant["overlap_threshold"] and rotate_recorder.init_angle > 0:
+        canvas_cropped, canvas_rotated = rotate_and_crop(canvas_uncropped, degree=rotate_recorder.init_angle)
+
+        # compute sum of the pixel size of both shapes:
+        size_cropped = get_area_size(canvas=canvas_cropped, color="white")  # original
+        size_rotated = get_area_size(canvas=canvas_rotated, color="white")  # rotated
+        size_sum = size_cropped + size_rotated
+
+        # make a jastrow by concatenating the shapes
+        # compute pixel size of the jastrow
+        jastrow = make_jastrow(canvas_cropped, canvas_rotated, configs_variable=input_config)
+        size_jastrow = get_area_size(canvas=jastrow, color="white")
+
+        # save the settings
+        previous_angle = rotate_recorder.init_angle
+
+        # update overlap area / angle
+        rotate_recorder.update_overlap(overlap=1 - (size_jastrow / size_sum))
+        rotate_recorder.update_angle()
+
+    return previous_angle
+
 
 if __name__ == "__main__":
 
     # make grid
-    grid_radius_outer = [0.8] # from 0 - 1; basically resolution
-    grid_thickness = np.linspace(0.1, 0.9, 20) # from 0 - 1
-    grid_angle = np.linspace(5, 45, 20) # from 1 - 45
+    grid_radius_outer = [0.8]  # from 0 - 1; basically resolution
+    grid_thickness = np.linspace(0.1, 0.9, 20)  # from 0 - 1
+    grid_angle = np.linspace(5, 45, 20)  # from 1 - 45
 
     # distances
     num_distances = 40
-    distances = np.linspace(0, 0.1, num_distances) * configs_constant['canvas_size_jastrow'] # from 0 - 1
+    distances = np.linspace(0, 0.1, num_distances) * configs_constant["canvas_size_jastrow"]  # from 0 - 1
 
     # make combinations of the settings
     combinations = list(itertools.product(grid_radius_outer, grid_thickness, grid_angle))
     configurations = [{"radius_outer": i[0], "thickness": i[1], "angle": i[2]} for i in combinations]
     configurations = [update_configs(config) for config in configurations]
 
-    # init configs to be saved
-    configs_to_save = []
-    
-    # divide the list into 3 pieces for parallel processing
-    # configuration_chunked = chunk_list(target_list=configurations, n=int(len(configurations) / 3)) 
+    with multiprocessing.Pool(os.cpu_count()) as pool:
+        results = list(tqdm(pool.imap(get_optimal_angle, configurations), total=len(configurations)))
+        # results = pool.map(get_optimal_angle, configurations)
+        configs_to_save = [{"configuration": config, "optimal_angle": result} for config, result in zip(configurations, results)]
 
-    for c in tqdm(configurations):
-        # init the original canvas + rotate recorder
-        canvas_uncropped = generate_shape(configs_variable=c)
-        rotate_recorder = RotateRecorder()
-
-        # iteratively reduce the angle of the second shape until it touches (overlap) with the first shape
-        # or stop when the angle is 0 (totally horizontal)
-        while rotate_recorder.overlapped < configs_constant['overlap_threshold'] and rotate_recorder.init_angle > 0:
-            canvas_cropped, canvas_rotated = rotate_and_crop(canvas_uncropped, degree=rotate_recorder.init_angle)
-
-            # compute sum of the pixel size of both shapes:
-                # original
-                # rotated
-            size_cropped = get_area_size(canvas=canvas_cropped, color="white")
-            size_rotated = get_area_size(canvas=canvas_rotated, color="white")
-            size_sum = size_cropped + size_rotated
-
-            # make a jastrow by concatenating the shapes
-            # compute pixel size of the jastrow
-            jastrow = make_jastrow(canvas_cropped, canvas_rotated, configs_variable=c)
-            size_jastrow = get_area_size(canvas=jastrow, color="white")
-
-            # save the settings
-            previous_config = c
-            previous_angle = rotate_recorder.init_angle
-
-            # update overlap area / angle
-            rotate_recorder.update_overlap(overlap= 1 - (size_jastrow / size_sum))
-            rotate_recorder.update_angle()
-
-            # print(f"Angle: {rotate_recorder.init_angle}, Overlap: {rotate_recorder.overlapped}")
-
-        # # make the actual shape here
-        # canvas_cropped, canvas_rotated = rotate_and_crop(canvas_uncropped, degree=previous_angle)
-
-        # save
-        configs_to_save.append({"config": previous_config, "angle": previous_angle})
-
-        # # build with the same settings + various distances
-        # for distance in distances:
-        #     actual_jastrow = make_jastrow(canvas_cropped, canvas_rotated, configs_variable=previous_config, distance=distance)
-        #     actual_jastrow = actual_jastrow.crop(actual_jastrow.getbbox())
-        #     actual_jastrow.save(Path("samples", f"{c['radius_outer']}-{c['thickness']}-{c['angle']}-{distance}.png"))
-    
     # save the configs
     json.dump(configs_to_save, open(Path("saved_configs.json"), "w"))
 

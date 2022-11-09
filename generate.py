@@ -264,7 +264,5 @@ if __name__ == "__main__":
                 actual_jastrow = actual_jastrow.crop(actual_jastrow.getbbox())
                 actual_jastrow.save(Path("samples", f"{c['radius_outer']}-{c['thickness']}-{c['angle']}-{distance}.png"))
 
-
-# https://seaborn-image.sarthakjariwala.com/en/latest/api/ImageGrid.html
 # streamlit.io
 # heroku

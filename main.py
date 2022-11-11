@@ -1,9 +1,6 @@
 import json
-import os
-from pathlib import Path
 
 import streamlit as st
-from PIL import Image
 
 from generate import generate_shape, make_jastrow, rotate_and_crop
 
@@ -15,8 +12,8 @@ class Demo:
         # read the json file
         self.data = json.load(open("data_demo.json"))
         # self.outer_radius = sorted(list(set([float(i[0]) for i in attributes]))) # 3800.0
-        self.thickness = [i["configuration"]["thickness"] for i in self.data]
-        self.radian = [i["configuration"]["angle"] for i in self.data]
+        self.thickness = sorted([i["configuration"]["thickness"] for i in self.data])
+        self.radian = sorted([i["configuration"]["angle"] for i in self.data])
 
         self.remove_logo()
         self.sidebar()

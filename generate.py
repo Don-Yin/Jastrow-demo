@@ -7,7 +7,6 @@ import json
 import multiprocessing
 import operator
 import os
-import time
 from math import cos, pi, sin
 from pathlib import Path
 

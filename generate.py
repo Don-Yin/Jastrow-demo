@@ -124,16 +124,26 @@ def rotate_and_crop(canvas: Image, degree: int = 44) -> Image:
         canvas: the canvas to rotate and crop
         degree: the degree to rotate the canvas
     Returns:
-        canvas_cropped: the cropped canvas
-        canvas_rotated: the rotated and cropped canvas
+        shape_1: the cropped canvas
+        shape_2: the rotated and cropped canvas
     """
     coordinates_upper_left, coordinates_lower_left = compute_coordinates(canvas)
 
-    canvas_cropped = canvas.crop(canvas.getbbox())
-    canvas_rotated = canvas.rotate(degree, center=(coordinates_lower_left[1], coordinates_lower_left[0]), expand=True)
-    canvas_rotated = canvas_rotated.crop(canvas_rotated.getbbox())
+    shape_1 = canvas.crop(canvas.getbbox())
+    shape_2 = canvas.rotate(degree, center=(coordinates_lower_left[1], coordinates_lower_left[0]), expand=True)
+    shape_2 = shape_2.crop(shape_2.getbbox())
 
-    return canvas_cropped, canvas_rotated
+    # make shape_1 blue where it is white
+    shape_1 = np.array(shape_1)
+    shape_1[shape_1[:, :, 3] == 255] = [0, 0, 255, 255]
+    shape_1 = Image.fromarray(shape_1)
+
+    # make shape_2 red where it is white
+    shape_2 = np.array(shape_2)
+    shape_2[shape_2[:, :, 3] == 255] = [255, 0, 0, 255]
+    shape_2 = Image.fromarray(shape_2)
+
+    return shape_1, shape_2
 
 
 def count_size(canvas) -> int:
@@ -219,16 +229,16 @@ def get_optimal_angle(input_config: dict):
     # iteratively reduce the angle of the second shape until it touches (overlap) with the first shape
     # or stop when the angle is 0 (totally horizontal)
     while rotate_recorder.overlapped < configs_constant["overlap_threshold"] and rotate_recorder.init_angle > 0:
-        canvas_cropped, canvas_rotated = rotate_and_crop(canvas_uncropped, degree=rotate_recorder.init_angle)
+        shape_1, shape_2 = rotate_and_crop(canvas_uncropped, degree=rotate_recorder.init_angle)
 
         # compute sum of the pixel size of both shapes:
-        size_cropped = get_area_size(canvas=canvas_cropped, color="white")  # original
-        size_rotated = get_area_size(canvas=canvas_rotated, color="white")  # rotated
+        size_cropped = get_area_size(canvas=shape_1, color="white")  # original
+        size_rotated = get_area_size(canvas=shape_2, color="white")  # rotated
         size_sum = size_cropped + size_rotated
 
         # make a jastrow by concatenating the shapes
         # compute pixel size of the jastrow
-        jastrow = make_jastrow(canvas_cropped, canvas_rotated, configs_variable=input_config)
+        jastrow = make_jastrow(shape_1, shape_2, configs_variable=input_config)
         size_jastrow = get_area_size(canvas=jastrow, color="white")
 
         # save the settings
